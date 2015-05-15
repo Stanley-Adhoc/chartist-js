@@ -872,7 +872,7 @@ var Chartist = {
 					options.classNames.horizontal += ' ct-center';
 				}
 				
-        var posData = Chartist.createLabel(positionalData, projectedValue, index, labelValues, axis, axisOptions.offset, axisOptions.labelWidth, axis.labelOffset, labelGroup, [
+        var posData = Chartist.createLabel(positionalData, projectedValue, index, labelValues, axis, axisOptions.offset, axisOptions.labelWidth, labelOffset, labelGroup, [
           options.classNames.label,
           options.classNames[axis.units.dir],
           options.classNames[axisOptions.position]
