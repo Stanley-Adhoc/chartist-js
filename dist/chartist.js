@@ -354,6 +354,32 @@ var Chartist = {
     return data.series.map(recursiveConvert);
   };
 
+	//ADHOC
+  Chartist.getDataVarArray = function (data) {
+    var array = [], value, localData;
+
+    for (var i = 0; i < data.series.length; i++) {
+			if (typeof(data.series[i]) !== 'object' || !data.series[i].dataVariance)
+				return null;
+      localData = data.series[i].dataVariance;
+      if (!(localData instanceof Array)) {
+				return null;
+      }
+			
+			array[i] = [];
+			Array.prototype.push.apply(array[i], localData);
+
+      // Convert object values to numbers
+      for (var j = 0; j < array[i].length; j++) {
+        value = array[i][j];
+        value = value.value === 0 ? 0 : (value.value || value);
+        array[i][j] = +value;
+      }
+    }
+
+    return array;
+  };
+	
   /**
    * Converts a number into a padding object.
    *
@@ -387,6 +413,8 @@ var Chartist = {
    * @return {Array} The array that got updated with missing values.
    */
   Chartist.normalizeDataArray = function (dataArray, length) {
+		if (!dataArray) return null; //ADHOC
+		
     for (var i = 0; i < dataArray.length; i++) {
       if (dataArray[i].length === length) {
         continue;
@@ -449,7 +477,7 @@ var Chartist = {
    * @param {Object} options The Object that contains all the optional values for the chart
    * @return {Object} An object that contains the highest and lowest value that will be visualized on the chart.
    */
-  Chartist.getHighLow = function (dataArray, options) {
+  Chartist.getHighLow = function (dataArray, options, dataVarArray ) {
     var i,
       j,
       highLow = {
@@ -461,12 +489,20 @@ var Chartist = {
 
     for (i = 0; i < dataArray.length; i++) {
       for (j = 0; j < dataArray[i].length; j++) {
-        if (findHigh && dataArray[i][j] > highLow.high) {
-          highLow.high = dataArray[i][j];
+				//ADHOC
+				var high = dataArray[i][j];
+				var low = dataArray[i][j];
+				if (dataVarArray && dataVarArray.length > 0) {
+					high += dataVarArray[i][j];
+					low -= dataVarArray[i][j];
+				}
+				
+        if (findHigh && high > highLow.high) {
+          highLow.high = high;
         }
 
-        if (findLow && dataArray[i][j] < highLow.low) {
-          highLow.low = dataArray[i][j];
+        if (findLow && low < highLow.low) {
+          highLow.low = low;
         }
       }
     }
@@ -534,7 +570,7 @@ var Chartist = {
    * @param {Boolean} onlyInteger
    * @return {Object} All the values to set the bounds of the chart
    */
-  Chartist.getBounds = function (axisLength, highLow, scaleMinSpace, referenceValue, onlyInteger) {
+  Chartist.getBounds = function (axisLength, highLow, scaleMinSpace, referenceValue, onlyInteger, numOfSteps) {
     var i,
       newMin,
       newMax,
@@ -558,6 +594,15 @@ var Chartist = {
     bounds.max = Math.ceil(bounds.high / bounds.step) * bounds.step;
     bounds.range = bounds.max - bounds.min;
     bounds.numberOfSteps = Math.round(bounds.range / bounds.step);
+		
+		// ADHOC
+		if(numOfSteps > 0) {
+			bounds.min = Math.floor(bounds.low / Math.pow(10, bounds.oom)) * Math.pow(10, bounds.oom);
+			bounds.max = Math.ceil(bounds.high / Math.pow(10, bounds.oom)) * Math.pow(10, bounds.oom);
+			bounds.range = bounds.max - bounds.min;
+			bounds.numberOfSteps = numOfSteps;
+			bounds.step = bounds.range / numOfSteps;
+		}
 
     // Optimize scale step by checking if subdivision is possible based on horizontalGridMinSpace
     // If we are already below the scaleMinSpace value we will scale up
@@ -575,7 +620,7 @@ var Chartist = {
       bounds.step = smallestFactor;
     } else {
       // Trying to divide or multiply by 2 and find the best step value
-      while (true) {
+      while (numOfSteps == 0) {//ADHOC
         if (scaleUp && Chartist.projectLength(axisLength, bounds.step, bounds) <= scaleMinSpace) {
           bounds.step *= 2;
         } else if (!scaleUp && Chartist.projectLength(axisLength, bounds.step / 2, bounds) >= scaleMinSpace) {
@@ -737,14 +782,19 @@ var Chartist = {
    * @param useForeignObject
    * @param eventEmitter
    */
-  Chartist.createLabel = function(projectedValue, index, labels, axis, axisOffset, labelOffset, group, classes, useForeignObject, eventEmitter) {
+  Chartist.createLabel = function(lastPositionalData, projectedValue, index, labels, axis, axisOffset, labelWidth, labelOffset, group, classes, useForeignObject, eventEmitter) {
     var labelElement;
     var positionalData = {};
 
     positionalData[axis.units.pos] = projectedValue.pos + labelOffset[axis.units.pos];
     positionalData[axis.counterUnits.pos] = labelOffset[axis.counterUnits.pos];
-    positionalData[axis.units.len] = projectedValue.len;
+    positionalData[axis.units.len] = labelWidth || projectedValue.len;
     positionalData[axis.counterUnits.len] = axisOffset - 10;
+		
+		//ADHOC
+		if (axis.units.pos == 'x' && lastPositionalData && positionalData.x < lastPositionalData.x + lastPositionalData.width) {
+			return null;
+		}
 
     if(useForeignObject) {
       // We need to set width and height explicitly to px as span will not expand with width and height being
@@ -769,6 +819,8 @@ var Chartist = {
       element: labelElement,
       text: labels[index]
     }, positionalData));
+		
+		return positionalData;
   };
 
   /**
@@ -788,7 +840,8 @@ var Chartist = {
     var axisOptions = options['axis' + axis.units.pos.toUpperCase()];
     var projectedValues = data.map(axis.projectValue.bind(axis));
     var labelValues = data.map(axisOptions.labelInterpolationFnc);
-
+		var positionalData = null;
+		
     projectedValues.forEach(function(projectedValue, index) {
       var labelOffset = {
         x: 0,
@@ -828,17 +881,30 @@ var Chartist = {
 
       if(axisOptions.showGrid) {
         Chartist.createGrid(projectedValue, index, axis, axis.gridOffset, chartRect[axis.counterUnits.len](), gridGroup, [
-          options.classNames.grid,
+          //ADHOC, options.classNames.grid,
+          (axisOptions.hiIndices && axisOptions.hiIndices.indexOf(index) >= 0) ? options.classNames.gridHi : options.classNames.grid,
           options.classNames[axis.units.dir]
         ], eventEmitter);
       }
 
-      if(axisOptions.showLabel) {
-        Chartist.createLabel(projectedValue, index, labelValues, axis, axisOptions.offset, labelOffset, labelGroup, [
+      if(axisOptions.showLabel || (axisOptions.hiIndices && axisOptions.hiIndices.indexOf(index) >= 0)) {//ADHOC
+				//ADHOC, for center align labels
+				if(axisOptions.labelAlign == 'center') {
+					options.classNames.horizontal += ' ct-center';
+				}
+				
+        var posData = Chartist.createLabel(positionalData, projectedValue, index, labelValues, axis, axisOptions.offset, axisOptions.labelWidth, axis.labelOffset, labelGroup, [
           options.classNames.label,
           options.classNames[axis.units.dir],
           options.classNames[axisOptions.position]
         ], useForeignObject, eventEmitter);
+				if (posData == null) {
+					if (axis.labelsHidden) {
+						axis.labelsHidden[index] = true;
+					}
+				} else {
+					positionalData = posData;
+				}
       }
     });
   };
@@ -1550,8 +1616,8 @@ var Chartist = {
       data: this.data
     });
 
-    // Create the first chart
-    this.createChart(this.optionsProvider.getCurrentOptions());
+    // Create the first chart, ADHOC removed
+    //this.createChart(this.optionsProvider.getCurrentOptions());
 
     // As chart is initialized from the event loop now we can reset our timeout reference
     // This is important if the chart gets initialized on the same element twice
@@ -2657,7 +2723,7 @@ var Chartist = {
       chartRect,
       options);
 
-    this.bounds = Chartist.getBounds(this.axisLength, options.highLow, options.scaleMinSpace, options.referenceValue, options.onlyInteger);
+    this.bounds = Chartist.getBounds(this.axisLength, options.highLow, options.scaleMinSpace, options.referenceValue, options.onlyInteger, options.numOfSteps);
   }
 
   function projectValue(value) {
@@ -2732,6 +2798,8 @@ var Chartist = {
         x: 0,
         y: 0
       },
+			//ADHOC
+			labelWidth: 0,
       // If labels should be shown or not
       showLabel: true,
       // If the axis grid should be drawn or not
@@ -2756,6 +2824,8 @@ var Chartist = {
       showLabel: true,
       // If the axis grid should be drawn or not
       showGrid: true,
+			// ADHOC, added for specifying steps
+			numOfSteps: 0,
       // Interpolation function that allows you to intercept the value from the axis label
       labelInterpolationFnc: Chartist.noop,
       // This value specifies the minimum height in pixel of the scale steps
@@ -2781,6 +2851,8 @@ var Chartist = {
     low: undefined,
     // Overriding the natural high of the chart allows you to zoom in or limit the charts highest displayed value
     high: undefined,
+		// ADHOC, automatically decide a good low value
+		autoLow: undefined,
     // Padding of the chart drawing area to the container element and labels as a number or padding object {top: 5, right: 5, bottom: 5, left: 5}
     chartPadding: {
       top: 15,
@@ -2800,8 +2872,10 @@ var Chartist = {
       series: 'ct-series',
       line: 'ct-line',
       point: 'ct-point',
+			pointWeak: 'ct-point ct-point-weak',//ADHOC
       area: 'ct-area',
       grid: 'ct-grid',
+			gridHi: 'ct-grid-hi',
       gridGroup: 'ct-grids',
       vertical: 'ct-vertical',
       horizontal: 'ct-horizontal',
@@ -2817,22 +2891,34 @@ var Chartist = {
   function createChart(options) {
     var seriesGroups = [];
     var normalizedData = Chartist.normalizeDataArray(Chartist.getDataArray(this.data, options.reverseData), this.data.labels.length);
-
+    var normalizedDataVar = Chartist.normalizeDataArray(Chartist.getDataVarArray(this.data, false), this.data.labels.length);
+		
     // Create new svg object
     this.svg = Chartist.createSvg(this.container, options.width, options.height, options.classNames.chart);
 
     var chartRect = Chartist.createChartRect(this.svg, options, defaultOptions.padding);
-    var highLow = Chartist.getHighLow(normalizedData, options);
-
+    var highLow = Chartist.getHighLow(normalizedData, options, normalizedDataVar );
+		// ADHOC, only do when highLow is normal, or else go wrong
+		if(highLow.high > highLow.low) {
+			// find a good low
+			if (options.autoLow === 0 && highLow.low > 0 && options.low === undefined) {
+				if (highLow.low / highLow.high < 0.7) {
+					options.low = 0;
+				}
+			}
+		}
+		
     var axisX = new Chartist.StepAxis(Chartist.Axis.units.x, chartRect, {
       stepCount: this.data.labels.length,
       stretch: options.fullWidth
     });
+		axisX.labelsHidden = [];
 
     var axisY = new Chartist.LinearScaleAxis(Chartist.Axis.units.y, chartRect, {
       highLow: highLow,
       scaleMinSpace: options.axisY.scaleMinSpace,
-      onlyInteger: options.axisY.onlyInteger
+      onlyInteger: options.axisY.onlyInteger,
+			numOfSteps: options.axisY.numOfSteps,
     });
 
     // Start drawing
@@ -2861,6 +2947,9 @@ var Chartist = {
       this.eventEmitter
     );
 
+		//ADHOC
+		var labels = this.data.labels;
+		
     // Draw the series
     this.data.series.forEach(function(series, seriesIndex) {
       seriesGroups[seriesIndex] = this.svg.elem('g');
@@ -2879,6 +2968,9 @@ var Chartist = {
 
       var pathCoordinates = [],
         pathData = [];
+			//ADHOC
+			var pathCoordinates1 = [];
+			var pathCoordinates2 = [];
 
       normalizedData[seriesIndex].forEach(function(value, valueIndex) {
         var p = {
@@ -2886,6 +2978,23 @@ var Chartist = {
           y: chartRect.y1 - axisY.projectValue(value, valueIndex, normalizedData[seriesIndex]).pos
         };
         pathCoordinates.push(p.x, p.y);
+				//ADHOC
+				if (normalizedDataVar && normalizedDataVar.length > 0) {
+					var valueVar = value + normalizedDataVar[seriesIndex][valueIndex];
+					var p1 = {
+						x: chartRect.x1 + axisX.projectValue(valueVar, valueIndex).pos,
+						y: chartRect.y1 - axisY.projectValue(valueVar, valueIndex).pos
+					};
+					pathCoordinates1.push(p1.x, p1.y);
+					
+					valueVar = value - normalizedDataVar[seriesIndex][valueIndex];
+					var p2 = {
+						x: chartRect.x1 + axisX.projectValue(valueVar, valueIndex).pos,
+						y: chartRect.y1 - axisY.projectValue(valueVar, valueIndex).pos
+					};
+					pathCoordinates2.push(p2.x, p2.y);
+				}
+				
         pathData.push({
           value: value,
           valueIndex: valueIndex,
@@ -2910,14 +3019,22 @@ var Chartist = {
       // Points are drawn from the pathElements returned by the interpolation function
       // Small offset for Firefox to render squares correctly
       if (seriesOptions.showPoint) {
-
+				var pointClassName = seriesOptions.classNames.point;
+				
         path.pathElements.forEach(function(pathElement) {
+					// ADHOC, make points with label hidden smaller
+					if (axisX.labelsHidden[pathElement.data.valueIndex]) {
+						pointClassName = seriesOptions.classNames.pointWeak;
+					}
+					
           var point = seriesGroups[seriesIndex].elem('line', {
             x1: pathElement.x,
             y1: pathElement.y,
             x2: pathElement.x + 0.01,
             y2: pathElement.y
-          }, options.classNames.point).attr({
+          }, pointClassName).attr({
+						//ADHOC
+						'index': pathElement.data.valueIndex,
             'value': pathElement.data.value,
             'meta': pathElement.data.meta
           }, Chartist.xmlNs.uri);
@@ -2994,6 +3111,29 @@ var Chartist = {
           element: area
         });
       }
+			else if (pathCoordinates1.length > 0) {//ADHOC
+				var areaPath = smoothing(pathCoordinates1).clone();
+				for (var i=pathCoordinates1.length/2-1; i>=0; i--) {
+					areaPath.line(pathCoordinates2[i*2], pathCoordinates2[i*2+1]);
+				}
+
+				// Create the new path for the area shape with the area class from the options
+				var area = seriesGroups[seriesIndex].elem('path', {
+					d: areaPath.stringify()
+				}, options.classNames.area, true).attr({
+					'values': normalizedData[seriesIndex]
+				}, Chartist.xmlNs.uri);
+
+				this.eventEmitter.emit('draw', {
+					type: 'area',
+					values: normalizedData[seriesIndex],
+					path: areaPath.clone(),
+					chartRect: chartRect,
+					index: seriesIndex,
+					group: seriesGroups[seriesIndex],
+					element: area
+				});
+			}
     }.bind(this));
 
     this.eventEmitter.emit('created', {
@@ -3155,6 +3295,8 @@ var Chartist = {
       showLabel: true,
       // If the axis grid should be drawn or not
       showGrid: true,
+			// ADHOC, added for specifying steps
+			numOfSteps: 0,
       // Interpolation function that allows you to intercept the value from the axis label
       labelInterpolationFnc: Chartist.noop,
       // This value specifies the minimum height in pixel of the scale steps
@@ -3273,7 +3415,8 @@ var Chartist = {
         highLow: highLow,
         scaleMinSpace: options.axisX.scaleMinSpace,
         onlyInteger: options.axisX.onlyInteger,
-        referenceValue: 0
+        referenceValue: 0,
+				numOfSteps: 0, //ADHOC
       });
     } else {
       labelAxis = axisX = new Chartist.StepAxis(Chartist.Axis.units.x, chartRect, {
@@ -3284,7 +3427,8 @@ var Chartist = {
         highLow: highLow,
         scaleMinSpace: options.axisY.scaleMinSpace,
         onlyInteger: options.axisY.onlyInteger,
-        referenceValue: 0
+        referenceValue: 0,
+				numOfSteps: options.axisY.numOfSteps, //ADHOC
       });
     }
 
@@ -3403,6 +3547,7 @@ var Chartist = {
         positions[labelAxis.counterUnits.pos + '2'] = options.stackBars ? stackedBarValues[valueIndex] : projected[labelAxis.counterUnits.pos];
 
         bar = seriesGroups[seriesIndex].elem('line', positions, options.classNames.bar).attr({
+					'index': valueIndex,//ADHOC
           'value': value,
           'meta': Chartist.getMetaData(series, valueIndex)
         }, Chartist.xmlNs.uri);
@@ -3525,6 +3670,8 @@ var Chartist = {
     showLabel: true,
     // Label position offset from the standard position which is half distance of the radius. This value can be either positive or negative. Positive values will position the label away from the center.
     labelOffset: 0,
+    // This option can be set to 'inside', 'outside' or 'center'. Positioned with 'inside' the labels will be placed on half the distance of the radius to the border of the Pie by respecting the 'labelOffset'. The 'outside' option will place the labels at the border of the pie and 'center' will place the labels in the absolute center point of the chart. The 'center' option only makes sense in conjunction with the 'labelOffset' option.
+    labelPosition: 'inside',
     // An interpolation function for the label value
     labelInterpolationFnc: Chartist.noop,
     // Label direction can be 'neutral', 'explode' or 'implode'. The labels anchor will be positioned based on those settings as well as the fact if the labels are on the right or left side of the center of the chart. Usually explode is useful when labels are positioned far away from the center.
@@ -3585,9 +3732,18 @@ var Chartist = {
     // See this proposal for more details: http://lists.w3.org/Archives/Public/www-svg/2003Oct/0000.html
     radius -= options.donut ? options.donutWidth / 2  : 0;
 
-    // If a donut chart then the label position is at the radius, if regular pie chart it's half of the radius
-    // see https://github.com/gionkunz/chartist-js/issues/21
-    labelRadius = options.donut ? radius : radius / 2;
+    // If labelPosition is set to `outside` or a donut chart is drawn then the label position is at the radius,
+    // if regular pie chart it's half of the radius
+    if(options.labelPosition === 'outside' || options.donut) {
+      labelRadius = radius;
+    } else if(options.labelPosition === 'center') {
+      // If labelPosition is center we start with 0 and will later wait for the labelOffset
+      labelRadius = 0;
+    } else {
+      // Default option is 'inside' where we use half the radius so the label will be placed in the center of the pie
+      // slice
+      labelRadius = radius / 2;
+    }
     // Add the offset to the labelRadius where a negative offset means closed to the center of the chart
     labelRadius += options.labelOffset;
 
@@ -3681,22 +3837,24 @@ var Chartist = {
         var labelPosition = Chartist.polarToCartesian(center.x, center.y, labelRadius, startAngle + (endAngle - startAngle) / 2),
           interpolatedValue = options.labelInterpolationFnc(this.data.labels ? this.data.labels[i] : dataArray[i], i);
 
-        var labelElement = seriesGroups[i].elem('text', {
-          dx: labelPosition.x,
-          dy: labelPosition.y,
-          'text-anchor': determineAnchorPosition(center, labelPosition, options.labelDirection)
-        }, options.classNames.label).text('' + interpolatedValue);
+        if(interpolatedValue || interpolatedValue === 0) {
+          var labelElement = seriesGroups[i].elem('text', {
+            dx: labelPosition.x,
+            dy: labelPosition.y,
+            'text-anchor': determineAnchorPosition(center, labelPosition, options.labelDirection)
+          }, options.classNames.label).text('' + interpolatedValue);
 
-        // Fire off draw event
-        this.eventEmitter.emit('draw', {
-          type: 'label',
-          index: i,
-          group: seriesGroups[i],
-          element: labelElement,
-          text: '' + interpolatedValue,
-          x: labelPosition.x,
-          y: labelPosition.y
-        });
+          // Fire off draw event
+          this.eventEmitter.emit('draw', {
+            type: 'label',
+            index: i,
+            group: seriesGroups[i],
+            element: labelElement,
+            text: '' + interpolatedValue,
+            x: labelPosition.x,
+            y: labelPosition.y
+          });
+        }
       }
 
       // Set next startAngle to current endAngle. Use slight offset so there are no transparent hairline issues
