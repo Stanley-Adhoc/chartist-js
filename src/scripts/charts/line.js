@@ -197,7 +197,7 @@
       var pathCoordinates = [],
         pathData = [];
 			//ADHOC
-			var pathCoordinates1 = [];
+			var pathCoordinates1 = [], pathData1 = [];
 			var pathCoordinates2 = [];
 
       normalizedData[seriesIndex].forEach(function(value, valueIndex) {
@@ -228,6 +228,12 @@
           valueIndex: valueIndex,
           meta: Chartist.getMetaData(series, valueIndex)
         });
+				
+        pathData1.push({
+          value: valueVar,
+          valueIndex: valueIndex,
+          meta: Chartist.getMetaData(series, valueIndex)
+        });
       }.bind(this));
 
       var seriesOptions = {
@@ -247,12 +253,12 @@
       // Points are drawn from the pathElements returned by the interpolation function
       // Small offset for Firefox to render squares correctly
       if (seriesOptions.showPoint) {
-				var pointClassName = seriesOptions.classNames.point;
+				var pointClassName = options.classNames.point;
 				
         path.pathElements.forEach(function(pathElement) {
 					// ADHOC, make points with label hidden smaller
 					if (axisX.labelsHidden[pathElement.data.valueIndex]) {
-						pointClassName = seriesOptions.classNames.pointWeak;
+						pointClassName = options.classNames.pointWeak;
 					}
 					
           var point = seriesGroups[seriesIndex].elem('line', {
@@ -340,7 +346,8 @@
         });
       }
 			else if (pathCoordinates1.length > 0) {//ADHOC
-				var areaPath = smoothing(pathCoordinates1).clone();
+      	var path1 = smoothing(pathCoordinates1, pathData1);
+				var areaPath = path1.clone();
 				for (var i=pathCoordinates1.length/2-1; i>=0; i--) {
 					areaPath.line(pathCoordinates2[i*2], pathCoordinates2[i*2+1]);
 				}

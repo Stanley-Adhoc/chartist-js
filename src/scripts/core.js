@@ -557,6 +557,10 @@ var Chartist = {
         high: highLow.high,
         low: highLow.low
       };
+		
+		//ADHOC
+		if (highLow.high < highLow.low)
+			return bounds;
 
     // Overrides of high / low based on reference value, it will make sure that the invisible reference value is
     // used to generate the chart. This is useful when the chart always needs to contain the position of the
@@ -576,9 +580,6 @@ var Chartist = {
 		
 		// ADHOC
 		if(numOfSteps > 0) {
-			bounds.min = Math.floor(bounds.low / Math.pow(10, bounds.oom)) * Math.pow(10, bounds.oom);
-			bounds.max = Math.ceil(bounds.high / Math.pow(10, bounds.oom)) * Math.pow(10, bounds.oom);
-			bounds.range = bounds.max - bounds.min;
 			bounds.numberOfSteps = numOfSteps;
 			bounds.step = bounds.range / numOfSteps;
 		}
@@ -816,6 +817,9 @@ var Chartist = {
    * @param eventEmitter
    */
   Chartist.createAxis = function(axis, data, chartRect, gridGroup, labelGroup, useForeignObject, options, eventEmitter) {
+		//ADHOC
+		if (!data) return;
+		
     var axisOptions = options['axis' + axis.units.pos.toUpperCase()];
     var projectedValues = data.map(axis.projectValue.bind(axis));
     var labelValues = data.map(axisOptions.labelInterpolationFnc);

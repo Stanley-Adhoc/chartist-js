@@ -180,6 +180,9 @@
     return function cardinal(pathCoordinates, valueData) {
       // First we try to split the coordinates into segments
       // This is necessary to treat "holes" in line charts
+			// ADHOC
+			if (!valueData) return null;
+			
       var segments = splitIntoSegments(pathCoordinates, valueData);
 
       // If the split resulted in more that one segment we need to interpolate each segment individually and join them

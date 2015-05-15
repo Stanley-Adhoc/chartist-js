@@ -578,6 +578,10 @@ var Chartist = {
         high: highLow.high,
         low: highLow.low
       };
+		
+		//ADHOC
+		if (highLow.high < highLow.low)
+			return bounds;
 
     // Overrides of high / low based on reference value, it will make sure that the invisible reference value is
     // used to generate the chart. This is useful when the chart always needs to contain the position of the
@@ -597,9 +601,6 @@ var Chartist = {
 		
 		// ADHOC
 		if(numOfSteps > 0) {
-			bounds.min = Math.floor(bounds.low / Math.pow(10, bounds.oom)) * Math.pow(10, bounds.oom);
-			bounds.max = Math.ceil(bounds.high / Math.pow(10, bounds.oom)) * Math.pow(10, bounds.oom);
-			bounds.range = bounds.max - bounds.min;
 			bounds.numberOfSteps = numOfSteps;
 			bounds.step = bounds.range / numOfSteps;
 		}
@@ -837,6 +838,9 @@ var Chartist = {
    * @param eventEmitter
    */
   Chartist.createAxis = function(axis, data, chartRect, gridGroup, labelGroup, useForeignObject, options, eventEmitter) {
+		//ADHOC
+		if (!data) return;
+		
     var axisOptions = options['axis' + axis.units.pos.toUpperCase()];
     var projectedValues = data.map(axis.projectValue.bind(axis));
     var labelValues = data.map(axisOptions.labelInterpolationFnc);
@@ -893,7 +897,7 @@ var Chartist = {
 					options.classNames.horizontal += ' ct-center';
 				}
 				
-        var posData = Chartist.createLabel(positionalData, projectedValue, index, labelValues, axis, axisOptions.offset, axisOptions.labelWidth, axis.labelOffset, labelGroup, [
+        var posData = Chartist.createLabel(positionalData, projectedValue, index, labelValues, axis, axisOptions.offset, axisOptions.labelWidth, labelOffset, labelGroup, [
           options.classNames.label,
           options.classNames[axis.units.dir],
           options.classNames[axisOptions.position]
@@ -1173,6 +1177,9 @@ var Chartist = {
     return function cardinal(pathCoordinates, valueData) {
       // First we try to split the coordinates into segments
       // This is necessary to treat "holes" in line charts
+			// ADHOC
+			if (!valueData) return null;
+			
       var segments = splitIntoSegments(pathCoordinates, valueData);
 
       // If the split resulted in more that one segment we need to interpolate each segment individually and join them
@@ -2969,7 +2976,7 @@ var Chartist = {
       var pathCoordinates = [],
         pathData = [];
 			//ADHOC
-			var pathCoordinates1 = [];
+			var pathCoordinates1 = [], pathData1 = [];
 			var pathCoordinates2 = [];
 
       normalizedData[seriesIndex].forEach(function(value, valueIndex) {
@@ -3000,6 +3007,12 @@ var Chartist = {
           valueIndex: valueIndex,
           meta: Chartist.getMetaData(series, valueIndex)
         });
+				
+        pathData1.push({
+          value: valueVar,
+          valueIndex: valueIndex,
+          meta: Chartist.getMetaData(series, valueIndex)
+        });
       }.bind(this));
 
       var seriesOptions = {
@@ -3019,12 +3032,12 @@ var Chartist = {
       // Points are drawn from the pathElements returned by the interpolation function
       // Small offset for Firefox to render squares correctly
       if (seriesOptions.showPoint) {
-				var pointClassName = seriesOptions.classNames.point;
+				var pointClassName = options.classNames.point;
 				
         path.pathElements.forEach(function(pathElement) {
 					// ADHOC, make points with label hidden smaller
 					if (axisX.labelsHidden[pathElement.data.valueIndex]) {
-						pointClassName = seriesOptions.classNames.pointWeak;
+						pointClassName = options.classNames.pointWeak;
 					}
 					
           var point = seriesGroups[seriesIndex].elem('line', {
@@ -3112,7 +3125,8 @@ var Chartist = {
         });
       }
 			else if (pathCoordinates1.length > 0) {//ADHOC
-				var areaPath = smoothing(pathCoordinates1).clone();
+      	var path1 = smoothing(pathCoordinates1, pathData1);
+				var areaPath = path1.clone();
 				for (var i=pathCoordinates1.length/2-1; i>=0; i--) {
 					areaPath.line(pathCoordinates2[i*2], pathCoordinates2[i*2+1]);
 				}
