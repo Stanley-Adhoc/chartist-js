@@ -2954,9 +2954,6 @@ var Chartist = {
       this.eventEmitter
     );
 
-		//ADHOC
-		var labels = this.data.labels;
-		
     // Draw the series
     this.data.series.forEach(function(series, seriesIndex) {
       seriesGroups[seriesIndex] = this.svg.elem('g');
