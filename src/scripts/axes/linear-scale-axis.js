@@ -13,7 +13,7 @@
       chartRect,
       options);
 
-    this.bounds = Chartist.getBounds(this.axisLength, options.highLow, options.scaleMinSpace, options.referenceValue, options.onlyInteger);
+    this.bounds = Chartist.getBounds(this.axisLength, options.highLow, options.scaleMinSpace, options.referenceValue, options.onlyInteger, options.numOfSteps);
   }
 
   function projectValue(value) {

@@ -50,6 +50,8 @@
       showLabel: true,
       // If the axis grid should be drawn or not
       showGrid: true,
+			// ADHOC, added for specifying steps
+			numOfSteps: 0,
       // Interpolation function that allows you to intercept the value from the axis label
       labelInterpolationFnc: Chartist.noop,
       // This value specifies the minimum height in pixel of the scale steps
@@ -168,7 +170,8 @@
         highLow: highLow,
         scaleMinSpace: options.axisX.scaleMinSpace,
         onlyInteger: options.axisX.onlyInteger,
-        referenceValue: 0
+        referenceValue: 0,
+				numOfSteps: 0, //ADHOC
       });
     } else {
       labelAxis = axisX = new Chartist.StepAxis(Chartist.Axis.units.x, chartRect, {
@@ -179,7 +182,8 @@
         highLow: highLow,
         scaleMinSpace: options.axisY.scaleMinSpace,
         onlyInteger: options.axisY.onlyInteger,
-        referenceValue: 0
+        referenceValue: 0,
+				numOfSteps: options.axisY.numOfSteps, //ADHOC
       });
     }
 
@@ -298,6 +302,7 @@
         positions[labelAxis.counterUnits.pos + '2'] = options.stackBars ? stackedBarValues[valueIndex] : projected[labelAxis.counterUnits.pos];
 
         bar = seriesGroups[seriesIndex].elem('line', positions, options.classNames.bar).attr({
+					'index': valueIndex,//ADHOC
           'value': value,
           'meta': Chartist.getMetaData(series, valueIndex)
         }, Chartist.xmlNs.uri);

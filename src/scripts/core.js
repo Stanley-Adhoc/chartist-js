@@ -333,6 +333,32 @@ var Chartist = {
     return data.series.map(recursiveConvert);
   };
 
+	//ADHOC
+  Chartist.getDataVarArray = function (data) {
+    var array = [], value, localData;
+
+    for (var i = 0; i < data.series.length; i++) {
+			if (typeof(data.series[i]) !== 'object' || !data.series[i].dataVariance)
+				return null;
+      localData = data.series[i].dataVariance;
+      if (!(localData instanceof Array)) {
+				return null;
+      }
+			
+			array[i] = [];
+			Array.prototype.push.apply(array[i], localData);
+
+      // Convert object values to numbers
+      for (var j = 0; j < array[i].length; j++) {
+        value = array[i][j];
+        value = value.value === 0 ? 0 : (value.value || value);
+        array[i][j] = +value;
+      }
+    }
+
+    return array;
+  };
+	
   /**
    * Converts a number into a padding object.
    *
@@ -366,6 +392,8 @@ var Chartist = {
    * @return {Array} The array that got updated with missing values.
    */
   Chartist.normalizeDataArray = function (dataArray, length) {
+		if (!dataArray) return null; //ADHOC
+		
     for (var i = 0; i < dataArray.length; i++) {
       if (dataArray[i].length === length) {
         continue;
@@ -428,7 +456,7 @@ var Chartist = {
    * @param {Object} options The Object that contains all the optional values for the chart
    * @return {Object} An object that contains the highest and lowest value that will be visualized on the chart.
    */
-  Chartist.getHighLow = function (dataArray, options) {
+  Chartist.getHighLow = function (dataArray, options, dataVarArray ) {
     var i,
       j,
       highLow = {
@@ -440,12 +468,20 @@ var Chartist = {
 
     for (i = 0; i < dataArray.length; i++) {
       for (j = 0; j < dataArray[i].length; j++) {
-        if (findHigh && dataArray[i][j] > highLow.high) {
-          highLow.high = dataArray[i][j];
+				//ADHOC
+				var high = dataArray[i][j];
+				var low = dataArray[i][j];
+				if (dataVarArray && dataVarArray.length > 0) {
+					high += dataVarArray[i][j];
+					low -= dataVarArray[i][j];
+				}
+				
+        if (findHigh && high > highLow.high) {
+          highLow.high = high;
         }
 
-        if (findLow && dataArray[i][j] < highLow.low) {
-          highLow.low = dataArray[i][j];
+        if (findLow && low < highLow.low) {
+          highLow.low = low;
         }
       }
     }
@@ -513,7 +549,7 @@ var Chartist = {
    * @param {Boolean} onlyInteger
    * @return {Object} All the values to set the bounds of the chart
    */
-  Chartist.getBounds = function (axisLength, highLow, scaleMinSpace, referenceValue, onlyInteger) {
+  Chartist.getBounds = function (axisLength, highLow, scaleMinSpace, referenceValue, onlyInteger, numOfSteps) {
     var i,
       newMin,
       newMax,
@@ -537,6 +573,15 @@ var Chartist = {
     bounds.max = Math.ceil(bounds.high / bounds.step) * bounds.step;
     bounds.range = bounds.max - bounds.min;
     bounds.numberOfSteps = Math.round(bounds.range / bounds.step);
+		
+		// ADHOC
+		if(numOfSteps > 0) {
+			bounds.min = Math.floor(bounds.low / Math.pow(10, bounds.oom)) * Math.pow(10, bounds.oom);
+			bounds.max = Math.ceil(bounds.high / Math.pow(10, bounds.oom)) * Math.pow(10, bounds.oom);
+			bounds.range = bounds.max - bounds.min;
+			bounds.numberOfSteps = numOfSteps;
+			bounds.step = bounds.range / numOfSteps;
+		}
 
     // Optimize scale step by checking if subdivision is possible based on horizontalGridMinSpace
     // If we are already below the scaleMinSpace value we will scale up
@@ -554,7 +599,7 @@ var Chartist = {
       bounds.step = smallestFactor;
     } else {
       // Trying to divide or multiply by 2 and find the best step value
-      while (true) {
+      while (numOfSteps == 0) {//ADHOC
         if (scaleUp && Chartist.projectLength(axisLength, bounds.step, bounds) <= scaleMinSpace) {
           bounds.step *= 2;
         } else if (!scaleUp && Chartist.projectLength(axisLength, bounds.step / 2, bounds) >= scaleMinSpace) {
@@ -716,14 +761,19 @@ var Chartist = {
    * @param useForeignObject
    * @param eventEmitter
    */
-  Chartist.createLabel = function(projectedValue, index, labels, axis, axisOffset, labelOffset, group, classes, useForeignObject, eventEmitter) {
+  Chartist.createLabel = function(lastPositionalData, projectedValue, index, labels, axis, axisOffset, labelWidth, labelOffset, group, classes, useForeignObject, eventEmitter) {
     var labelElement;
     var positionalData = {};
 
     positionalData[axis.units.pos] = projectedValue.pos + labelOffset[axis.units.pos];
     positionalData[axis.counterUnits.pos] = labelOffset[axis.counterUnits.pos];
-    positionalData[axis.units.len] = projectedValue.len;
+    positionalData[axis.units.len] = labelWidth || projectedValue.len;
     positionalData[axis.counterUnits.len] = axisOffset - 10;
+		
+		//ADHOC
+		if (axis.units.pos == 'x' && lastPositionalData && positionalData.x < lastPositionalData.x + lastPositionalData.width) {
+			return null;
+		}
 
     if(useForeignObject) {
       // We need to set width and height explicitly to px as span will not expand with width and height being
@@ -748,6 +798,8 @@ var Chartist = {
       element: labelElement,
       text: labels[index]
     }, positionalData));
+		
+		return positionalData;
   };
 
   /**
@@ -767,7 +819,8 @@ var Chartist = {
     var axisOptions = options['axis' + axis.units.pos.toUpperCase()];
     var projectedValues = data.map(axis.projectValue.bind(axis));
     var labelValues = data.map(axisOptions.labelInterpolationFnc);
-
+		var positionalData = null;
+		
     projectedValues.forEach(function(projectedValue, index) {
       var labelOffset = {
         x: 0,
@@ -807,17 +860,30 @@ var Chartist = {
 
       if(axisOptions.showGrid) {
         Chartist.createGrid(projectedValue, index, axis, axis.gridOffset, chartRect[axis.counterUnits.len](), gridGroup, [
-          options.classNames.grid,
+          //ADHOC, options.classNames.grid,
+          (axisOptions.hiIndices && axisOptions.hiIndices.indexOf(index) >= 0) ? options.classNames.gridHi : options.classNames.grid,
           options.classNames[axis.units.dir]
         ], eventEmitter);
       }
 
-      if(axisOptions.showLabel) {
-        Chartist.createLabel(projectedValue, index, labelValues, axis, axisOptions.offset, labelOffset, labelGroup, [
+      if(axisOptions.showLabel || (axisOptions.hiIndices && axisOptions.hiIndices.indexOf(index) >= 0)) {//ADHOC
+				//ADHOC, for center align labels
+				if(axisOptions.labelAlign == 'center') {
+					options.classNames.horizontal += ' ct-center';
+				}
+				
+        var posData = Chartist.createLabel(positionalData, projectedValue, index, labelValues, axis, axisOptions.offset, axisOptions.labelWidth, axis.labelOffset, labelGroup, [
           options.classNames.label,
           options.classNames[axis.units.dir],
           options.classNames[axisOptions.position]
         ], useForeignObject, eventEmitter);
+				if (posData == null) {
+					if (axis.labelsHidden) {
+						axis.labelsHidden[index] = true;
+					}
+				} else {
+					positionalData = posData;
+				}
       }
     });
   };

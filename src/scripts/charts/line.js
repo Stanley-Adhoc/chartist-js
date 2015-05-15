@@ -26,6 +26,8 @@
         x: 0,
         y: 0
       },
+			//ADHOC
+			labelWidth: 0,
       // If labels should be shown or not
       showLabel: true,
       // If the axis grid should be drawn or not
@@ -50,6 +52,8 @@
       showLabel: true,
       // If the axis grid should be drawn or not
       showGrid: true,
+			// ADHOC, added for specifying steps
+			numOfSteps: 0,
       // Interpolation function that allows you to intercept the value from the axis label
       labelInterpolationFnc: Chartist.noop,
       // This value specifies the minimum height in pixel of the scale steps
@@ -75,6 +79,8 @@
     low: undefined,
     // Overriding the natural high of the chart allows you to zoom in or limit the charts highest displayed value
     high: undefined,
+		// ADHOC, automatically decide a good low value
+		autoLow: undefined,
     // Padding of the chart drawing area to the container element and labels as a number or padding object {top: 5, right: 5, bottom: 5, left: 5}
     chartPadding: {
       top: 15,
@@ -94,8 +100,10 @@
       series: 'ct-series',
       line: 'ct-line',
       point: 'ct-point',
+			pointWeak: 'ct-point ct-point-weak',//ADHOC
       area: 'ct-area',
       grid: 'ct-grid',
+			gridHi: 'ct-grid-hi',
       gridGroup: 'ct-grids',
       vertical: 'ct-vertical',
       horizontal: 'ct-horizontal',
@@ -111,22 +119,34 @@
   function createChart(options) {
     var seriesGroups = [];
     var normalizedData = Chartist.normalizeDataArray(Chartist.getDataArray(this.data, options.reverseData), this.data.labels.length);
-
+    var normalizedDataVar = Chartist.normalizeDataArray(Chartist.getDataVarArray(this.data, false), this.data.labels.length);
+		
     // Create new svg object
     this.svg = Chartist.createSvg(this.container, options.width, options.height, options.classNames.chart);
 
     var chartRect = Chartist.createChartRect(this.svg, options, defaultOptions.padding);
-    var highLow = Chartist.getHighLow(normalizedData, options);
-
+    var highLow = Chartist.getHighLow(normalizedData, options, normalizedDataVar );
+		// ADHOC, only do when highLow is normal, or else go wrong
+		if(highLow.high > highLow.low) {
+			// find a good low
+			if (options.autoLow === 0 && highLow.low > 0 && options.low === undefined) {
+				if (highLow.low / highLow.high < 0.7) {
+					options.low = 0;
+				}
+			}
+		}
+		
     var axisX = new Chartist.StepAxis(Chartist.Axis.units.x, chartRect, {
       stepCount: this.data.labels.length,
       stretch: options.fullWidth
     });
+		axisX.labelsHidden = [];
 
     var axisY = new Chartist.LinearScaleAxis(Chartist.Axis.units.y, chartRect, {
       highLow: highLow,
       scaleMinSpace: options.axisY.scaleMinSpace,
-      onlyInteger: options.axisY.onlyInteger
+      onlyInteger: options.axisY.onlyInteger,
+			numOfSteps: options.axisY.numOfSteps,
     });
 
     // Start drawing
@@ -155,6 +175,9 @@
       this.eventEmitter
     );
 
+		//ADHOC
+		var labels = this.data.labels;
+		
     // Draw the series
     this.data.series.forEach(function(series, seriesIndex) {
       seriesGroups[seriesIndex] = this.svg.elem('g');
@@ -173,6 +196,9 @@
 
       var pathCoordinates = [],
         pathData = [];
+			//ADHOC
+			var pathCoordinates1 = [];
+			var pathCoordinates2 = [];
 
       normalizedData[seriesIndex].forEach(function(value, valueIndex) {
         var p = {
@@ -180,6 +206,23 @@
           y: chartRect.y1 - axisY.projectValue(value, valueIndex, normalizedData[seriesIndex]).pos
         };
         pathCoordinates.push(p.x, p.y);
+				//ADHOC
+				if (normalizedDataVar && normalizedDataVar.length > 0) {
+					var valueVar = value + normalizedDataVar[seriesIndex][valueIndex];
+					var p1 = {
+						x: chartRect.x1 + axisX.projectValue(valueVar, valueIndex).pos,
+						y: chartRect.y1 - axisY.projectValue(valueVar, valueIndex).pos
+					};
+					pathCoordinates1.push(p1.x, p1.y);
+					
+					valueVar = value - normalizedDataVar[seriesIndex][valueIndex];
+					var p2 = {
+						x: chartRect.x1 + axisX.projectValue(valueVar, valueIndex).pos,
+						y: chartRect.y1 - axisY.projectValue(valueVar, valueIndex).pos
+					};
+					pathCoordinates2.push(p2.x, p2.y);
+				}
+				
         pathData.push({
           value: value,
           valueIndex: valueIndex,
@@ -204,14 +247,22 @@
       // Points are drawn from the pathElements returned by the interpolation function
       // Small offset for Firefox to render squares correctly
       if (seriesOptions.showPoint) {
-
+				var pointClassName = seriesOptions.classNames.point;
+				
         path.pathElements.forEach(function(pathElement) {
+					// ADHOC, make points with label hidden smaller
+					if (axisX.labelsHidden[pathElement.data.valueIndex]) {
+						pointClassName = seriesOptions.classNames.pointWeak;
+					}
+					
           var point = seriesGroups[seriesIndex].elem('line', {
             x1: pathElement.x,
             y1: pathElement.y,
             x2: pathElement.x + 0.01,
             y2: pathElement.y
-          }, options.classNames.point).attr({
+          }, pointClassName).attr({
+						//ADHOC
+						'index': pathElement.data.valueIndex,
             'value': pathElement.data.value,
             'meta': pathElement.data.meta
           }, Chartist.xmlNs.uri);
@@ -288,6 +339,29 @@
           element: area
         });
       }
+			else if (pathCoordinates1.length > 0) {//ADHOC
+				var areaPath = smoothing(pathCoordinates1).clone();
+				for (var i=pathCoordinates1.length/2-1; i>=0; i--) {
+					areaPath.line(pathCoordinates2[i*2], pathCoordinates2[i*2+1]);
+				}
+
+				// Create the new path for the area shape with the area class from the options
+				var area = seriesGroups[seriesIndex].elem('path', {
+					d: areaPath.stringify()
+				}, options.classNames.area, true).attr({
+					'values': normalizedData[seriesIndex]
+				}, Chartist.xmlNs.uri);
+
+				this.eventEmitter.emit('draw', {
+					type: 'area',
+					values: normalizedData[seriesIndex],
+					path: areaPath.clone(),
+					chartRect: chartRect,
+					index: seriesIndex,
+					group: seriesGroups[seriesIndex],
+					element: area
+				});
+			}
     }.bind(this));
 
     this.eventEmitter.emit('created', {
