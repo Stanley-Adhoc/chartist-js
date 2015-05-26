@@ -771,6 +771,11 @@ var Chartist = {
     positionalData[axis.units.len] = labelWidth || projectedValue.len;
     positionalData[axis.counterUnits.len] = axisOffset - 10;
 		
+		//ADHOC, hack for align bottom without css3
+		if (axis.units.pos == 'y') {
+			positionalData.y += positionalData[axis.units.len] * 0.7;
+		}
+		
 		//ADHOC
 		if (axis.units.pos == 'x' && lastPositionalData && positionalData.x < lastPositionalData.x + lastPositionalData.width) {
 			return null;
